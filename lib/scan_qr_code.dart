@@ -138,7 +138,7 @@ class _ScanQrCodeState extends State<ScanQrCode> {
           _dialogButton('Call', Icons.call, color, () {
             Navigator.pop(context);
             _launchUrl('tel:$number');
-          }),
+          }),SizedBox(height: 10,),
           _dialogButton('SMS', Icons.sms, Colors.orange, () {
             Navigator.pop(context);
             _launchUrl('sms:$number');
