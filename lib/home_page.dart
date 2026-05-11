@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'scan_qr_code.dart';
 import 'generator_code.dart';
 import 'history_page.dart';
+import 'document_scanner_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -90,6 +91,19 @@ class HomePage extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const GeneratorCode()),
                 ),
               ),
+
+              const SizedBox(height: 16),
+              _FeatureCard(
+                icon: Icons.document_scanner,
+                title: 'Document Scanner',
+                subtitle: 'Scan documents & save as PDF',
+                color: Colors.orange,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DocumentScannerPage()),
+                ),
+              ),
+
             ],
           ),
         ),
