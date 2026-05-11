@@ -10,9 +10,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:saver_gallery/saver_gallery.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:googleapis/drive/v3.dart' as drive;
-import 'package:googleapis_auth/auth_io.dart';
+// import 'package:google_sign_in/google_sign_in.dart';
+// import 'package:googleapis/drive/v3.dart' as drive;
+// import 'package:googleapis_auth/auth_io.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'document_service.dart';
 import 'package:http/http.dart' as http;
@@ -285,97 +285,101 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     }
   }
 
-  // ✅ Internet check করে backup
   Future<void> _checkAndBackup(File pdfFile) async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final hasInternet = connectivityResult != ConnectivityResult.none;
-
-    if (hasInternet) {
-      _showBackupDialog(pdfFile);
-    } else {
-      _showSnackBar('Saved to phone (offline)', Colors.blue);
-    }
+    _showSnackBar('PDF saved to phone!', Colors.green);
   }
 
-  // ✅ Google Drive Backup
-  void _showBackupDialog(File pdfFile) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.cloud_upload, color: Color(0xFF2196F3)),
-            SizedBox(width: 8),
-            Text('Cloud Backup'),
-          ],
-        ),
-        content: const Text(
-          'Internet available. Backup to Google Drive?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Skip'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              _backupToGoogleDrive(pdfFile);
-            },
-            icon: const Icon(Icons.cloud_upload),
-            label: const Text('Backup'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2196F3),
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // // ✅ Internet check করে backup
+  // Future<void> _checkAndBackup(File pdfFile) async {
+  //   final connectivityResult = await Connectivity().checkConnectivity();
+  //   final hasInternet = connectivityResult != ConnectivityResult.none;
+  //
+  //   if (hasInternet) {
+  //     _showBackupDialog(pdfFile);
+  //   } else {
+  //     _showSnackBar('Saved to phone (offline)', Colors.blue);
+  //   }
+  // }
 
-  Future<void> _backupToGoogleDrive(File pdfFile) async {
-    setState(() => isProcessing = true);
-    try {
-      final googleSignIn = GoogleSignIn(
-        scopes: [drive.DriveApi.driveFileScope],
-      );
-      final account = await googleSignIn.signIn();
-      if (account == null) {
-        setState(() => isProcessing = false);
-        return;
-      }
-
-      final authHeaders = await account.authHeaders;
-      final authenticateClient = GoogleAuthClient(authHeaders);
-      final driveApi = drive.DriveApi(authenticateClient);
-
-      final driveFile = drive.File()
-        ..name = pdfFile.path.split('/').last
-        ..parents = ['root'];
-
-      final response = await driveApi.files.create(
-        driveFile,
-        uploadMedia: drive.Media(
-          pdfFile.openRead(),
-          pdfFile.lengthSync(),
-        ),
-      );
-
-      if (!mounted) return;
-      setState(() => isProcessing = false);
-      if (response.id != null) {
-        _showSnackBar('Backed up to Google Drive!', Colors.green);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => isProcessing = false);
-      _showSnackBar('Backup failed', Colors.red);
-    }
-  }
+  // // ✅ Google Drive Backup
+  // void _showBackupDialog(File pdfFile) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (_) => AlertDialog(
+  //       shape: RoundedRectangleBorder(
+  //         borderRadius: BorderRadius.circular(16),
+  //       ),
+  //       title: const Row(
+  //         children: [
+  //           Icon(Icons.cloud_upload, color: Color(0xFF2196F3)),
+  //           SizedBox(width: 8),
+  //           Text('Cloud Backup'),
+  //         ],
+  //       ),
+  //       content: const Text(
+  //         'Internet available. Backup to Google Drive?',
+  //       ),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context),
+  //           child: const Text('Skip'),
+  //         ),
+  //         ElevatedButton.icon(
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             _backupToGoogleDrive(pdfFile);
+  //           },
+  //           icon: const Icon(Icons.cloud_upload),
+  //           label: const Text('Backup'),
+  //           style: ElevatedButton.styleFrom(
+  //             backgroundColor: const Color(0xFF2196F3),
+  //             foregroundColor: Colors.white,
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
+  //
+  // Future<void> _backupToGoogleDrive(File pdfFile) async {
+  //   setState(() => isProcessing = true);
+  //   try {
+  //     final googleSignIn = GoogleSignIn(
+  //       scopes: [drive.DriveApi.driveFileScope],
+  //     );
+  //     final account = await googleSignIn.signIn();
+  //     if (account == null) {
+  //       setState(() => isProcessing = false);
+  //       return;
+  //     }
+  //
+  //     final authHeaders = await account.authHeaders;
+  //     final authenticateClient = GoogleAuthClient(authHeaders);
+  //     final driveApi = drive.DriveApi(authenticateClient);
+  //
+  //     final driveFile = drive.File()
+  //       ..name = pdfFile.path.split('/').last
+  //       ..parents = ['root'];
+  //
+  //     final response = await driveApi.files.create(
+  //       driveFile,
+  //       uploadMedia: drive.Media(
+  //         pdfFile.openRead(),
+  //         pdfFile.lengthSync(),
+  //       ),
+  //     );
+  //
+  //     if (!mounted) return;
+  //     setState(() => isProcessing = false);
+  //     if (response.id != null) {
+  //       _showSnackBar('Backed up to Google Drive!', Colors.green);
+  //     }
+  //   } catch (e) {
+  //     if (!mounted) return;
+  //     setState(() => isProcessing = false);
+  //     _showSnackBar('Backup failed', Colors.red);
+  //   }
+  // }
 
   // ✅ Page Reorder
   void _reorderPages() {
