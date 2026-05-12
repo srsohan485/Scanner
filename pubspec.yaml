@@ -54,6 +54,7 @@ dependencies:
 #  googleapis_auth: ^1.6.0                 # ✅ Google Auth
 #  google_sign_in: ^6.2.1                  # ✅ Google Sign In
   flutter_image_compress: ^2.2.0
+  wifi_iot: ^0.3.19
 
 dev_dependencies:
   flutter_test:

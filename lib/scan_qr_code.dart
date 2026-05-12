@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'history_service.dart';
+import 'package:wifi_iot/wifi_iot.dart';
 
 class ScanQrCode extends StatefulWidget {
   const ScanQrCode({Key? key}) : super(key: key);
@@ -177,14 +178,23 @@ class _ScanQrCodeState extends State<ScanQrCode> {
         title = 'WiFi QR Code';
         final wifiInfo = _parseWifi(value);
         actions = [
-          _dialogButton('Copy Password', Icons.copy, color, () {
+          _dialogButton('Connect', Icons.wifi, color, () {
+            Navigator.pop(context);
+            _connectToWifi(
+              wifiInfo['ssid'] ?? '',
+              wifiInfo['password'] ?? '',
+              wifiInfo['type'] ?? 'WPA',
+            );
+          }),
+          _dialogButton('Copy Password', Icons.copy, Colors.grey, () {
             Navigator.pop(context);
             Clipboard.setData(
               ClipboardData(text: wifiInfo['password'] ?? ''),
             );
+            // ✅ সরাসরি ScaffoldMessenger use করুন
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('WiFi password copied!'),
+                content: Text('Password copied!'),
                 backgroundColor: Colors.green,
               ),
             );
@@ -292,6 +302,47 @@ class _ScanQrCodeState extends State<ScanQrCode> {
     final type = RegExp(r'T:([^;]+)').firstMatch(value)?.group(1) ?? '';
     return {'ssid': ssid, 'password': password, 'type': type};
   }
+
+  Future<void> _connectToWifi(String ssid, String password, String type) async {
+    try {
+      bool connected = await WiFiForIoTPlugin.connect(
+        ssid,
+        password: password,
+        security: type == 'WPA'
+            ? NetworkSecurity.WPA
+            : type == 'WEP'
+            ? NetworkSecurity.WEP
+            : NetworkSecurity.NONE,
+        joinOnce: true,
+      );
+
+      if (connected && mounted) {
+        // ✅ _showSnackBar এর বদলে সরাসরি
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Connected to $ssid!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not connect to $ssid'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Connection failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+
 
   Future<void> _launchUrl(String url) async {
     try {
