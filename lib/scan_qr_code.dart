@@ -93,7 +93,7 @@ class _ScanQrCodeState extends State<ScanQrCode> {
   String _detectType(String value) {
     if (value.startsWith('http://') || value.startsWith('https://')) {
       return 'url';
-    } else if (value.startsWith('tel:') || RegExp(r'^\+?[0-9]{7,15}$').hasMatch(value)) {
+    } else if (value.startsWith('tel:') || RegExp(r'^\+?[0-9]{7,15}$').hasMatch(value) || value.startsWith('00880') || value.startsWith('+880')) {
       return 'phone';
     } else if (value.startsWith('mailto:') || RegExp(r'^[\w.-]+@[\w.-]+\.\w+$').hasMatch(value)) {
       return 'email';
@@ -138,11 +138,16 @@ class _ScanQrCodeState extends State<ScanQrCode> {
         actions = [
           _dialogButton('Call', Icons.call, color, () {
             Navigator.pop(context);
-            _launchUrl('tel:$number');
+            _launchUrl('Tel:$number');
           }),SizedBox(height: 10,),
           _dialogButton('SMS', Icons.sms, Colors.orange, () {
             Navigator.pop(context);
             _launchUrl('sms:$number');
+          }),SizedBox(height: 10,),
+          // ✅ bKash এর বদলে Payment button
+          _dialogButton('Payment', Icons.payment, const Color(0xFF2196F3), () {
+            Navigator.pop(context);
+            _showPaymentDialog(number); // ✅ Payment dialog খুলবে
           }),
         ];
         break;
@@ -357,6 +362,93 @@ class _ScanQrCodeState extends State<ScanQrCode> {
     } catch (e) {
       if (mounted) _showErrorSnackBar('Invalid data');
     }
+  }
+
+  void _showPaymentDialog(String number) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.payment, color: Color(0xFF2196F3)),
+            SizedBox(width: 8),
+            Text('Payment'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              number,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Choose payment method:',
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          // ✅ bKash
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              launchUrl(
+                Uri.parse('bkash://pay?number=$number'),
+                mode: LaunchMode.externalApplication,
+              ).catchError((_) {
+                launchUrl(
+                  Uri.parse(
+                    'https://play.google.com/store/apps/details?id=com.bKash.customerapp',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                );
+              });
+            },
+            icon: const Icon(Icons.payment, size: 16),
+            label: const Text('bKash'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE2136E),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),SizedBox(height: 10,),
+          // ✅ Nagad
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              launchUrl(
+                Uri.parse('nagad://pay?number=$number'),
+                mode: LaunchMode.externalApplication,
+              ).catchError((_) {
+                launchUrl(
+                  Uri.parse(
+                    'https://play.google.com/store/apps/details?id=com.nagad.mobilebanking',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                );
+              });
+            },
+            icon: const Icon(Icons.payment, size: 16),
+            label: const Text('Nagad'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6B00),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _copyToClipboard() {
