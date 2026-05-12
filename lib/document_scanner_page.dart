@@ -2,18 +2,21 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_tesseract_ocr/android_ios.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:saver_gallery/saver_gallery.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-// import 'package:google_sign_in/google_sign_in.dart';
-// import 'package:googleapis/drive/v3.dart' as drive;
-// import 'package:googleapis_auth/auth_io.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:translator/translator.dart';
 import 'document_service.dart';
 import 'package:http/http.dart' as http;
 import 'saved_documents_page.dart';
@@ -113,21 +116,20 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
       for (final imagePath in scannedImages) {
         final inputImage = InputImage.fromFilePath(imagePath);
         final recognized = await textRecognizer.processImage(inputImage);
-        allText += recognized.text + '\n\n';
+        if (recognized.text.isNotEmpty) {
+          allText += recognized.text + '\n\n';
+        }
       }
 
       await textRecognizer.close();
 
       if (!mounted) return;
-      setState(() {
-        _extractedText = allText.trim();
-        isProcessing = false;
-      });
+      setState(() => isProcessing = false);
 
-      if (_extractedText.isNotEmpty) {
-        _showOcrResult(_extractedText);
+      if (allText.trim().isNotEmpty) {
+        _showOcrResult(allText.trim());
       } else {
-        _showSnackBar('No text found in document', Colors.orange);
+        _showSnackBar('No text found', Colors.orange);
       }
     } catch (e) {
       if (!mounted) return;
@@ -289,98 +291,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     _showSnackBar('PDF saved to phone!', Colors.green);
   }
 
-  // // ✅ Internet check করে backup
-  // Future<void> _checkAndBackup(File pdfFile) async {
-  //   final connectivityResult = await Connectivity().checkConnectivity();
-  //   final hasInternet = connectivityResult != ConnectivityResult.none;
-  //
-  //   if (hasInternet) {
-  //     _showBackupDialog(pdfFile);
-  //   } else {
-  //     _showSnackBar('Saved to phone (offline)', Colors.blue);
-  //   }
-  // }
-
-  // // ✅ Google Drive Backup
-  // void _showBackupDialog(File pdfFile) {
-  //   showDialog(
-  //     context: context,
-  //     builder: (_) => AlertDialog(
-  //       shape: RoundedRectangleBorder(
-  //         borderRadius: BorderRadius.circular(16),
-  //       ),
-  //       title: const Row(
-  //         children: [
-  //           Icon(Icons.cloud_upload, color: Color(0xFF2196F3)),
-  //           SizedBox(width: 8),
-  //           Text('Cloud Backup'),
-  //         ],
-  //       ),
-  //       content: const Text(
-  //         'Internet available. Backup to Google Drive?',
-  //       ),
-  //       actions: [
-  //         TextButton(
-  //           onPressed: () => Navigator.pop(context),
-  //           child: const Text('Skip'),
-  //         ),
-  //         ElevatedButton.icon(
-  //           onPressed: () {
-  //             Navigator.pop(context);
-  //             _backupToGoogleDrive(pdfFile);
-  //           },
-  //           icon: const Icon(Icons.cloud_upload),
-  //           label: const Text('Backup'),
-  //           style: ElevatedButton.styleFrom(
-  //             backgroundColor: const Color(0xFF2196F3),
-  //             foregroundColor: Colors.white,
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
-  //
-  // Future<void> _backupToGoogleDrive(File pdfFile) async {
-  //   setState(() => isProcessing = true);
-  //   try {
-  //     final googleSignIn = GoogleSignIn(
-  //       scopes: [drive.DriveApi.driveFileScope],
-  //     );
-  //     final account = await googleSignIn.signIn();
-  //     if (account == null) {
-  //       setState(() => isProcessing = false);
-  //       return;
-  //     }
-  //
-  //     final authHeaders = await account.authHeaders;
-  //     final authenticateClient = GoogleAuthClient(authHeaders);
-  //     final driveApi = drive.DriveApi(authenticateClient);
-  //
-  //     final driveFile = drive.File()
-  //       ..name = pdfFile.path.split('/').last
-  //       ..parents = ['root'];
-  //
-  //     final response = await driveApi.files.create(
-  //       driveFile,
-  //       uploadMedia: drive.Media(
-  //         pdfFile.openRead(),
-  //         pdfFile.lengthSync(),
-  //       ),
-  //     );
-  //
-  //     if (!mounted) return;
-  //     setState(() => isProcessing = false);
-  //     if (response.id != null) {
-  //       _showSnackBar('Backed up to Google Drive!', Colors.green);
-  //     }
-  //   } catch (e) {
-  //     if (!mounted) return;
-  //     setState(() => isProcessing = false);
-  //     _showSnackBar('Backup failed', Colors.red);
-  //   }
-  // }
-
   // ✅ Page Reorder
   void _reorderPages() {
     showModalBottomSheet(
@@ -476,78 +386,432 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     );
   }
 
+  Future<void> _extractTextFromGallery() async {
+    setState(() => isProcessing = true);
+    try {
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> images = await picker.pickMultiImage();
+
+      if (images.isEmpty) {
+        setState(() => isProcessing = false);
+        return;
+      }
+
+      String allText = '';
+      final textRecognizer = TextRecognizer(
+        script: TextRecognitionScript.latin,
+      );
+
+      for (final image in images) {
+        final inputImage = InputImage.fromFilePath(image.path);
+        final recognized = await textRecognizer.processImage(inputImage);
+        if (recognized.text.isNotEmpty) {
+          allText += recognized.text + '\n\n';
+        }
+      }
+
+      await textRecognizer.close();
+
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+
+      if (allText.trim().isNotEmpty) {
+        _showOcrResult(allText.trim());
+      } else {
+        _showSnackBar('No text found', Colors.orange);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+      _showSnackBar('Failed to extract text', Colors.red);
+    }
+  }
+
+  Future<void> _extractTextFromCamera() async {
+    setState(() => isProcessing = true);
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+      );
+
+      if (image == null) {
+        setState(() => isProcessing = false);
+        return;
+      }
+
+      final textRecognizer = TextRecognizer(
+        script: TextRecognitionScript.latin,
+      );
+      final inputImage = InputImage.fromFilePath(image.path);
+      final recognized = await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
+
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+
+      if (recognized.text.isNotEmpty) {
+        _showOcrResult(recognized.text);
+      } else {
+        _showSnackBar('No text found', Colors.orange);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+      _showSnackBar('Failed to extract text', Colors.red);
+    }
+  }
+
   // ✅ OCR Result Dialog
   void _showOcrResult(String text) {
+    double fontSize = 14.0;
+    String searchQuery = '';
+    bool isPlaying = false;
+    String translatedText = '';
+    bool showTranslated = false;
+    final flutterTts = FlutterTts();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          List<String> lines = text.split('\n');
+          List<String> filteredLines = searchQuery.isEmpty
+              ? lines
+              : lines
+              .where((line) =>
+              line.toLowerCase().contains(searchQuery.toLowerCase()))
+              .toList();
+          String displayText = filteredLines.join('\n');
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.85,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (_, scrollController) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.text_fields, color: Color(0xFF2196F3)),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Extracted Text',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.copy),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _showSnackBar('Text copied!', Colors.green);
-                    },
+                  const SizedBox(height: 12),
+
+                  // Title + Font size
+                  Row(
+                    children: [
+                      const Icon(Icons.text_fields, color: Color(0xFF2196F3)),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Extracted Text',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.text_decrease),
+                        onPressed: () {
+                          if (fontSize > 10) {
+                            setSheetState(() => fontSize -= 2);
+                          }
+                        },
+                      ),
+                      Text('${fontSize.toInt()}',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.text_increase),
+                        onPressed: () {
+                          if (fontSize < 30) {
+                            setSheetState(() => fontSize += 2);
+                          }
+                        },
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.share),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Share.share(text);
-                    },
+
+                  const SizedBox(height: 8),
+
+                  // Search
+                  TextField(
+                    onChanged: (value) =>
+                        setSheetState(() => searchQuery = value),
+                    decoration: InputDecoration(
+                      hintText: 'Search in text...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: searchQuery.isNotEmpty
+                          ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () =>
+                            setSheetState(() => searchQuery = ''),
+                      )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Action buttons
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _ocrActionButton('Copy', Icons.copy, Colors.blue, () {
+                          Clipboard.setData(ClipboardData(text: text));
+                          Navigator.pop(context);
+                          _showSnackBar('Text copied!', Colors.green);
+                        }),
+                        const SizedBox(width: 8),
+                        _ocrActionButton('Share', Icons.share, Colors.green, () {
+                          Navigator.pop(context);
+                          Share.share(text);
+                        }),
+                        const SizedBox(width: 8),
+                        _ocrActionButton(
+                            'Save TXT', Icons.save_alt, Colors.orange, () async {
+                          Navigator.pop(context);
+                          await _saveAsText(text);
+                        }),
+                        const SizedBox(width: 8),
+                        _ocrActionButton(
+                            'Save PDF', Icons.picture_as_pdf, Colors.red,
+                                () async {
+                              Navigator.pop(context);
+                              await _saveTextAsPdf(text);
+                            }),
+                        const SizedBox(width: 8),
+                        _ocrActionButton(
+                          isPlaying ? 'Stop' : 'Read',
+                          isPlaying ? Icons.stop : Icons.volume_up,
+                          Colors.purple,
+                              () async {
+                            if (isPlaying) {
+                              await flutterTts.stop();
+                              setSheetState(() => isPlaying = false);
+                            } else {
+                              setSheetState(() => isPlaying = true);
+                              await flutterTts.setLanguage('bn-BD');
+                              await flutterTts.speak(text);
+                              flutterTts.setCompletionHandler(() {
+                                setSheetState(() => isPlaying = false);
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _ocrActionButton(
+                            'Translate', Icons.translate, Colors.teal, () async {
+                          setSheetState(() => translatedText = 'Translating...');
+                          try {
+                            final translator = GoogleTranslator();
+                            final shortText = text.substring(
+                                0, text.length > 100 ? 100 : text.length);
+                            final detected = await translator.translate(
+                              shortText,
+                              to: 'en',
+                            );
+                            final isEnglish =
+                                detected.sourceLanguage.code == 'en';
+                            final result = await translator.translate(
+                              text,
+                              from: isEnglish ? 'en' : 'bn',
+                              to: isEnglish ? 'bn' : 'en',
+                            );
+                            setSheetState(() {
+                              translatedText = result.text;
+                              showTranslated = true;
+                            });
+                          } catch (e) {
+                            setSheetState(() {
+                              translatedText = 'Translation failed';
+                              showTranslated = true;
+                            });
+                          }
+                        }),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(),
+
+                  // Text display
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (searchQuery.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '${filteredLines.length} lines found',
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          Text(
+                            displayText,
+                            style:
+                            TextStyle(fontSize: fontSize, height: 1.6),
+                          ),
+                          if (showTranslated && translatedText.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.teal.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: Colors.teal.withOpacity(0.2)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.translate,
+                                          size: 16, color: Colors.teal),
+                                      const SizedBox(width: 4),
+                                      const Text(
+                                        'Translation',
+                                        style: TextStyle(
+                                          color: Colors.teal,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      GestureDetector(
+                                        onTap: () {
+                                          Clipboard.setData(ClipboardData(
+                                              text: translatedText));
+                                          _showSnackBar(
+                                              'Translation copied!', Colors.green);
+                                        },
+                                        child: const Icon(Icons.copy,
+                                            size: 16, color: Colors.teal),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    translatedText,
+                                    style: TextStyle(
+                                        fontSize: fontSize, height: 1.6),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const Divider(),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  child: Text(
-                    text,
-                    style: const TextStyle(fontSize: 14, height: 1.6),
-                  ),
-                ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _ocrActionButton(
+      String label,
+      IconData icon,
+      Color color,
+      VoidCallback onTap,
+      ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _saveAsText(String text) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'text_${DateTime.now().millisecondsSinceEpoch}.txt';
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsString(text);
+      _showSnackBar('Saved as $fileName', Colors.green);
+    } catch (e) {
+      _showSnackBar('Failed to save text', Colors.red);
+    }
+  }
+
+  Future<void> _saveTextAsPdf(String text) async {
+    try {
+      final pdf = pw.Document();
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (pw.Context context) => [
+            pw.Text(text, style: const pw.TextStyle(fontSize: 12)),
+          ],
+        ),
+      );
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'text_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsBytes(await pdf.save());
+      await DocumentService.saveDocument(
+        path: file.path,
+        name: fileName,
+        category: 'General',
+        pageCount: 1,
+      );
+      _showSnackBar('Saved as PDF!', Colors.green);
+    } catch (e) {
+      _showSnackBar('Failed to save PDF', Colors.red);
+    }
   }
 
   Future<void> _openPdf() async {
@@ -789,7 +1053,7 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                       'Extract Text',
                       Icons.text_fields,
                       Colors.orange,
-                      _extractText,
+                      _showExtractTextOptions,
                     ),
                   ],
                 ),
@@ -1095,16 +1359,108 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
       ),
     );
   }
-}
 
-// ✅ Google Auth Client
-class GoogleAuthClient extends http.BaseClient {
-  final Map<String, String> _headers;
-  final http.Client _client = http.Client();
-  GoogleAuthClient(this._headers);
+  // ✅ Extract Text button এ click করলে এই dialog আসবে
+  void _showExtractTextOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Extract Text From',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
 
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
-    return _client.send(request..headers.addAll(_headers));
+            // ✅ Scanned pages থেকে
+            ListTile(
+              onTap: () {
+                Navigator.pop(context);
+                _extractText(); // আগের function
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.document_scanner, color: Colors.orange),
+              ),
+              title: const Text(
+                'From Scanned Pages',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Currently scanned pages থেকে text নেবে'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            ),
+
+            const Divider(),
+
+            // ✅ Gallery থেকে image upload করে
+            ListTile(
+              onTap: () {
+                Navigator.pop(context);
+                _extractTextFromGallery();
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.photo_library, color: Colors.blue),
+              ),
+              title: const Text(
+                'Upload from Gallery',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Gallery থেকে image upload করে text নেবে'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            ),
+
+            const Divider(),
+
+            // ✅ Camera দিয়ে তুলে
+            ListTile(
+              onTap: () {
+                Navigator.pop(context);
+                _extractTextFromCamera();
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.camera_alt, color: Colors.green),
+              ),
+              title: const Text(
+                'Take Photo',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Camera দিয়ে ছবি তুলে text নেবে'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
   }
 }
+
