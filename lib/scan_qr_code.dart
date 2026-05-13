@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
@@ -183,6 +184,7 @@ class _ScanQrCodeState extends State<ScanQrCode> {
         title = 'WiFi QR Code';
         final wifiInfo = _parseWifi(value);
         actions = [
+          // ✅ Connect
           _dialogButton('Connect', Icons.wifi, color, () {
             Navigator.pop(context);
             _connectToWifi(
@@ -191,18 +193,32 @@ class _ScanQrCodeState extends State<ScanQrCode> {
               wifiInfo['type'] ?? 'WPA',
             );
           }),
+          // ✅ Copy Password
           _dialogButton('Copy Password', Icons.copy, Colors.grey, () {
             Navigator.pop(context);
             Clipboard.setData(
               ClipboardData(text: wifiInfo['password'] ?? ''),
             );
-            // ✅ সরাসরি ScaffoldMessenger use করুন
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Password copied!'),
                 backgroundColor: Colors.green,
               ),
             );
+          }),
+          // ✅ Share WiFi info
+          _dialogButton('Share', Icons.share, Colors.green, () {
+            Navigator.pop(context);
+            _shareWifiInfo(
+              wifiInfo['ssid'] ?? '',
+              wifiInfo['password'] ?? '',
+              wifiInfo['type'] ?? 'WPA',
+            );
+          }),
+          // ✅ Forget WiFi
+          _dialogButton('Forget', Icons.wifi_off, Colors.red, () {
+            Navigator.pop(context);
+            _forgetWifi(wifiInfo['ssid'] ?? '');
           }),
         ];
         break;
@@ -310,6 +326,7 @@ class _ScanQrCodeState extends State<ScanQrCode> {
 
   Future<void> _connectToWifi(String ssid, String password, String type) async {
     try {
+      // ✅ Android 10+ এ এভাবে connect করতে হবে
       bool connected = await WiFiForIoTPlugin.connect(
         ssid,
         password: password,
@@ -318,11 +335,16 @@ class _ScanQrCodeState extends State<ScanQrCode> {
             : type == 'WEP'
             ? NetworkSecurity.WEP
             : NetworkSecurity.NONE,
-        joinOnce: true,
+        joinOnce: false,      // ✅ false করুন
+        withInternet: true,   // ✅ internet সহ connect করবে
       );
 
-      if (connected && mounted) {
-        // ✅ _showSnackBar এর বদলে সরাসরি
+      if (!mounted) return;
+
+      if (connected) {
+        // ✅ Force করে সেই WiFi তে bind করবে
+        await WiFiForIoTPlugin.forceWifiUsage(true);
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Connected to $ssid!'),
@@ -330,21 +352,173 @@ class _ScanQrCodeState extends State<ScanQrCode> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not connect to $ssid'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // ✅ Connect না হলে Settings এ নিয়ে যাবে
+        _showWifiSettingsDialog(ssid, password);
       }
     } catch (e) {
+      if (!mounted) return;
+      // ✅ Error হলেও Settings এ নিয়ে যাবে
+      _showWifiSettingsDialog(ssid, password);
+    }
+  }
+  // ✅ WiFi Forget করা
+  Future<void> _forgetWifi(String ssid) async {
+    try {
+      await WiFiForIoTPlugin.disconnect();
+      await WiFiForIoTPlugin.removeWifiNetwork(ssid);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Connection failed'),
-          backgroundColor: Colors.red,
+        SnackBar(
+          content: Text('$ssid removed!'),
+          backgroundColor: Colors.orange,
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      // ✅ কাজ না করলে Settings এ নিয়ে যাবে
+      launchUrl(
+        Uri.parse('android.settings.WIFI_SETTINGS'),
+        mode: LaunchMode.externalApplication,
+      );
     }
+  }
+
+// ✅ WiFi Share করা
+  void _shareWifiInfo(String ssid, String password, String type) {
+    Share.share(
+      'WiFi Network: $ssid\nPassword: $password\nSecurity: $type',
+      subject: 'WiFi Password for $ssid',
+    );
+  }
+
+// ✅ WiFi Settings dialog
+  void _showWifiSettingsDialog(String ssid, String password) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.wifi, color: Color(0xFF2196F3)),
+            SizedBox(width: 8),
+            Text('Connect to WiFi'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Could not connect automatically.\nPlease connect manually:',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2196F3).withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFF2196F3).withOpacity(0.2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.wifi, size: 14, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Network: ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      Text(
+                        ssid,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.lock, size: 14, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Password: ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      Text(
+                        password,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          // ✅ Password copy
+          TextButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: password));
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Password copied!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Password'),
+          ),
+          // ✅ WiFi Settings এ যাবে
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              WiFiForIoTPlugin.disconnect();
+              launchUrl(
+                Uri.parse('android.settings.WIFI_SETTINGS'),
+                mode: LaunchMode.externalApplication,
+              ).catchError((_) {
+                launchUrl(
+                  Uri.parse('app-settings:'),
+                  mode: LaunchMode.externalApplication,
+                );
+              });
+            },
+            icon: const Icon(Icons.settings, size: 16),
+            label: const Text('Open WiFi Settings'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2196F3),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
 

@@ -1,11 +1,10 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tesseract_ocr/android_ios.dart';
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/pdf.dart';
@@ -14,11 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:saver_gallery/saver_gallery.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:translator/translator.dart';
 import 'document_service.dart';
-import 'package:http/http.dart' as http;
 import 'saved_documents_page.dart';
 
 class DocumentScannerPage extends StatefulWidget {
@@ -34,13 +29,27 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
   String? savedPdfPath;
   String selectedCategory = 'General';
   bool _isEnhanced = false;
-  String _extractedText = '';
+  late final TextRecognizer _textRecognizer;
+  late final FlutterTts _flutterTts;
 
   final List<String> categories = [
     'General', 'NID', 'Passport', 'Certificate', 'Bill', 'Other'
   ];
 
-  // ✅ Document Scan
+  @override
+  void initState() {
+    super.initState();
+    _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    _flutterTts = FlutterTts();
+  }
+
+  @override
+  void dispose() {
+    _textRecognizer.close();
+    _flutterTts.stop();
+    super.dispose();
+  }
+
   Future<void> _scanDocument() async {
     try {
       setState(() => isProcessing = true);
@@ -66,7 +75,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     }
   }
 
-  // ✅ Image Enhancement - Black & White
   Future<void> _enhanceImages() async {
     if (scannedImages.isEmpty) return;
     setState(() => isProcessing = true);
@@ -75,7 +83,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
       List<String> enhancedPaths = [];
       for (final imagePath in scannedImages) {
         final bytes = await File(imagePath).readAsBytes();
-        // Grayscale conversion
         final codec = await ui.instantiateImageCodec(bytes);
         final frame = await codec.getNextFrame();
         final image = frame.image;
@@ -102,26 +109,19 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     }
   }
 
-  // ✅ OCR - Text Recognition (Online + Offline)
   Future<void> _extractText() async {
     if (scannedImages.isEmpty) return;
     setState(() => isProcessing = true);
 
     try {
       String allText = '';
-      final textRecognizer = TextRecognizer(
-        script: TextRecognitionScript.latin,
-      );
-
       for (final imagePath in scannedImages) {
         final inputImage = InputImage.fromFilePath(imagePath);
-        final recognized = await textRecognizer.processImage(inputImage);
+        final recognized = await _textRecognizer.processImage(inputImage);
         if (recognized.text.isNotEmpty) {
           allText += recognized.text + '\n\n';
         }
       }
-
-      await textRecognizer.close();
 
       if (!mounted) return;
       setState(() => isProcessing = false);
@@ -138,16 +138,76 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     }
   }
 
-  // ✅ Convert to PDF with custom name & password
+  Future<void> _extractTextFromGallery() async {
+    setState(() => isProcessing = true);
+    try {
+      final picker = ImagePicker();
+      final List<XFile> images = await picker.pickMultiImage();
+
+      if (images.isEmpty) {
+        setState(() => isProcessing = false);
+        return;
+      }
+
+      String allText = '';
+      for (final image in images) {
+        final inputImage = InputImage.fromFilePath(image.path);
+        final recognized = await _textRecognizer.processImage(inputImage);
+        if (recognized.text.isNotEmpty) {
+          allText += recognized.text + '\n\n';
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+
+      if (allText.trim().isNotEmpty) {
+        _showOcrResult(allText.trim());
+      } else {
+        _showSnackBar('No text found', Colors.orange);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+      _showSnackBar('Failed to extract text', Colors.red);
+    }
+  }
+
+  Future<void> _extractTextFromCamera() async {
+    setState(() => isProcessing = true);
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.camera);
+
+      if (image == null) {
+        setState(() => isProcessing = false);
+        return;
+      }
+
+      final inputImage = InputImage.fromFilePath(image.path);
+      final recognized = await _textRecognizer.processImage(inputImage);
+
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+
+      if (recognized.text.isNotEmpty) {
+        _showOcrResult(recognized.text);
+      } else {
+        _showSnackBar('No text found', Colors.orange);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isProcessing = false);
+      _showSnackBar('Failed to extract text', Colors.red);
+    }
+  }
+
   Future<void> _convertToPdf() async {
     if (scannedImages.isEmpty) return;
 
-    // PDF name dialog
     final nameController = TextEditingController(
       text: '${selectedCategory}_${DateTime.now().millisecondsSinceEpoch}',
     );
-    final passwordController = TextEditingController();
-    bool usePassword = false;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -171,7 +231,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                 ),
               ),
               const SizedBox(height: 12),
-              // Category selector
               DropdownButtonFormField<String>(
                 value: selectedCategory,
                 decoration: InputDecoration(
@@ -189,30 +248,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                   setState(() => selectedCategory = v!);
                 },
               ),
-              const SizedBox(height: 12),
-              // Password toggle
-              Row(
-                children: [
-                  Switch(
-                    value: usePassword,
-                    onChanged: (v) =>
-                        setDialogState(() => usePassword = v),
-                  ),
-                  const Text('Add Password'),
-                ],
-              ),
-              if (usePassword)
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: const Icon(Icons.lock),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
             ],
           ),
           actions: [
@@ -242,8 +277,15 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
       final pdf = pw.Document();
 
       for (final imagePath in scannedImages) {
-        final imageBytes = await File(imagePath).readAsBytes();
-        final image = pw.MemoryImage(imageBytes);
+        final compressedBytes = await FlutterImageCompress.compressWithFile(
+          imagePath,
+          quality: 75,
+          minWidth: 1200,
+          minHeight: 1600,
+        );
+
+        if (compressedBytes == null) continue;
+        final image = pw.MemoryImage(compressedBytes);
         pdf.addPage(
           pw.Page(
             pageFormat: PdfPageFormat.a4,
@@ -262,7 +304,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
       final file = File('${directory.path}/$fileName');
       await file.writeAsBytes(await pdf.save());
 
-      // Save metadata
       await DocumentService.saveDocument(
         path: file.path,
         name: nameController.text.trim(),
@@ -276,10 +317,7 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
         isProcessing = false;
       });
 
-      _showSnackBar('PDF created: $fileName', Colors.green);
-
-      // Auto backup check
-      _checkAndBackup(file);
+      _showSnackBar('PDF saved: $fileName', Colors.green);
     } catch (e) {
       if (!mounted) return;
       setState(() => isProcessing = false);
@@ -287,11 +325,6 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     }
   }
 
-  Future<void> _checkAndBackup(File pdfFile) async {
-    _showSnackBar('PDF saved to phone!', Colors.green);
-  }
-
-  // ✅ Page Reorder
   void _reorderPages() {
     showModalBottomSheet(
       context: context,
@@ -318,10 +351,7 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                 const SizedBox(height: 16),
                 const Text(
                   'Reorder Pages',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const Text(
                   'Drag to reorder pages',
@@ -386,90 +416,10 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     );
   }
 
-  Future<void> _extractTextFromGallery() async {
-    setState(() => isProcessing = true);
-    try {
-      final ImagePicker picker = ImagePicker();
-      final List<XFile> images = await picker.pickMultiImage();
-
-      if (images.isEmpty) {
-        setState(() => isProcessing = false);
-        return;
-      }
-
-      String allText = '';
-      final textRecognizer = TextRecognizer(
-        script: TextRecognitionScript.latin,
-      );
-
-      for (final image in images) {
-        final inputImage = InputImage.fromFilePath(image.path);
-        final recognized = await textRecognizer.processImage(inputImage);
-        if (recognized.text.isNotEmpty) {
-          allText += recognized.text + '\n\n';
-        }
-      }
-
-      await textRecognizer.close();
-
-      if (!mounted) return;
-      setState(() => isProcessing = false);
-
-      if (allText.trim().isNotEmpty) {
-        _showOcrResult(allText.trim());
-      } else {
-        _showSnackBar('No text found', Colors.orange);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => isProcessing = false);
-      _showSnackBar('Failed to extract text', Colors.red);
-    }
-  }
-
-  Future<void> _extractTextFromCamera() async {
-    setState(() => isProcessing = true);
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.camera,
-      );
-
-      if (image == null) {
-        setState(() => isProcessing = false);
-        return;
-      }
-
-      final textRecognizer = TextRecognizer(
-        script: TextRecognitionScript.latin,
-      );
-      final inputImage = InputImage.fromFilePath(image.path);
-      final recognized = await textRecognizer.processImage(inputImage);
-      await textRecognizer.close();
-
-      if (!mounted) return;
-      setState(() => isProcessing = false);
-
-      if (recognized.text.isNotEmpty) {
-        _showOcrResult(recognized.text);
-      } else {
-        _showSnackBar('No text found', Colors.orange);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => isProcessing = false);
-      _showSnackBar('Failed to extract text', Colors.red);
-    }
-  }
-
-  // ✅ OCR Result Dialog
   void _showOcrResult(String text) {
     double fontSize = 14.0;
     String searchQuery = '';
     bool isPlaying = false;
-    String translatedText = '';
-    bool showTranslated = false;
-    final flutterTts = FlutterTts();
 
     showModalBottomSheet(
       context: context,
@@ -509,11 +459,12 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // Title + Font size
                   Row(
                     children: [
-                      const Icon(Icons.text_fields, color: Color(0xFF2196F3)),
+                      const Icon(
+                        Icons.text_fields,
+                        color: Color(0xFF2196F3),
+                      ),
                       const SizedBox(width: 8),
                       const Text(
                         'Extracted Text',
@@ -531,8 +482,10 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                           }
                         },
                       ),
-                      Text('${fontSize.toInt()}',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                        '${fontSize.toInt()}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.text_increase),
                         onPressed: () {
@@ -543,10 +496,7 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 8),
-
-                  // Search
                   TextField(
                     onChanged: (value) =>
                         setSheetState(() => searchQuery = value),
@@ -566,40 +516,55 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                         borderRadius: BorderRadius.circular(10),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      contentPadding:
+                      const EdgeInsets.symmetric(vertical: 8),
                     ),
                   ),
-
                   const SizedBox(height: 8),
-
-                  // Action buttons
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _ocrActionButton('Copy', Icons.copy, Colors.blue, () {
-                          Clipboard.setData(ClipboardData(text: text));
-                          Navigator.pop(context);
-                          _showSnackBar('Text copied!', Colors.green);
-                        }),
-                        const SizedBox(width: 8),
-                        _ocrActionButton('Share', Icons.share, Colors.green, () {
-                          Navigator.pop(context);
-                          Share.share(text);
-                        }),
+                        _ocrActionButton(
+                          'Copy',
+                          Icons.copy,
+                          Colors.blue,
+                              () {
+                            Clipboard.setData(ClipboardData(text: text));
+                            Navigator.pop(context);
+                            _showSnackBar('Text copied!', Colors.green);
+                          },
+                        ),
                         const SizedBox(width: 8),
                         _ocrActionButton(
-                            'Save TXT', Icons.save_alt, Colors.orange, () async {
-                          Navigator.pop(context);
-                          await _saveAsText(text);
-                        }),
+                          'Share',
+                          Icons.share,
+                          Colors.green,
+                              () {
+                            Navigator.pop(context);
+                            Share.share(text);
+                          },
+                        ),
                         const SizedBox(width: 8),
                         _ocrActionButton(
-                            'Save PDF', Icons.picture_as_pdf, Colors.red,
-                                () async {
-                              Navigator.pop(context);
-                              await _saveTextAsPdf(text);
-                            }),
+                          'Save TXT',
+                          Icons.save_alt,
+                          Colors.orange,
+                              () async {
+                            Navigator.pop(context);
+                            await _saveAsText(text);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _ocrActionButton(
+                          'Save PDF',
+                          Icons.picture_as_pdf,
+                          Colors.red,
+                              () async {
+                            Navigator.pop(context);
+                            await _saveTextAsPdf(text);
+                          },
+                        ),
                         const SizedBox(width: 8),
                         _ocrActionButton(
                           isPlaying ? 'Stop' : 'Read',
@@ -607,55 +572,22 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                           Colors.purple,
                               () async {
                             if (isPlaying) {
-                              await flutterTts.stop();
+                              await _flutterTts.stop();
                               setSheetState(() => isPlaying = false);
                             } else {
                               setSheetState(() => isPlaying = true);
-                              await flutterTts.setLanguage('bn-BD');
-                              await flutterTts.speak(text);
-                              flutterTts.setCompletionHandler(() {
+                              await _flutterTts.setLanguage('bn-BD');
+                              await _flutterTts.speak(text);
+                              _flutterTts.setCompletionHandler(() {
                                 setSheetState(() => isPlaying = false);
                               });
                             }
                           },
                         ),
-                        const SizedBox(width: 8),
-                        _ocrActionButton(
-                            'Translate', Icons.translate, Colors.teal, () async {
-                          setSheetState(() => translatedText = 'Translating...');
-                          try {
-                            final translator = GoogleTranslator();
-                            final shortText = text.substring(
-                                0, text.length > 100 ? 100 : text.length);
-                            final detected = await translator.translate(
-                              shortText,
-                              to: 'en',
-                            );
-                            final isEnglish =
-                                detected.sourceLanguage.code == 'en';
-                            final result = await translator.translate(
-                              text,
-                              from: isEnglish ? 'en' : 'bn',
-                              to: isEnglish ? 'bn' : 'en',
-                            );
-                            setSheetState(() {
-                              translatedText = result.text;
-                              showTranslated = true;
-                            });
-                          } catch (e) {
-                            setSheetState(() {
-                              translatedText = 'Translation failed';
-                              showTranslated = true;
-                            });
-                          }
-                        }),
                       ],
                     ),
                   ),
-
                   const Divider(),
-
-                  // Text display
                   Expanded(
                     child: SingleChildScrollView(
                       controller: scrollController,
@@ -675,58 +607,11 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                             ),
                           Text(
                             displayText,
-                            style:
-                            TextStyle(fontSize: fontSize, height: 1.6),
-                          ),
-                          if (showTranslated && translatedText.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.teal.withOpacity(0.05),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                    color: Colors.teal.withOpacity(0.2)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.translate,
-                                          size: 16, color: Colors.teal),
-                                      const SizedBox(width: 4),
-                                      const Text(
-                                        'Translation',
-                                        style: TextStyle(
-                                          color: Colors.teal,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      GestureDetector(
-                                        onTap: () {
-                                          Clipboard.setData(ClipboardData(
-                                              text: translatedText));
-                                          _showSnackBar(
-                                              'Translation copied!', Colors.green);
-                                        },
-                                        child: const Icon(Icons.copy,
-                                            size: 16, color: Colors.teal),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    translatedText,
-                                    style: TextStyle(
-                                        fontSize: fontSize, height: 1.6),
-                                  ),
-                                ],
-                              ),
+                            style: TextStyle(
+                              fontSize: fontSize,
+                              height: 1.6,
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
@@ -863,7 +748,9 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         title: const Text('Clear All'),
         content: const Text('Remove all scanned pages?'),
         actions: [
@@ -877,12 +764,14 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
               setState(() {
                 scannedImages.clear();
                 savedPdfPath = null;
-                _extractedText = '';
                 _isEnhanced = false;
               });
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Clear', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Clear',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -895,310 +784,102 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: const Text(
-          'Document Scanner',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF2196F3),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        actions: [
-          if (scannedImages.isNotEmpty) ...[
-            // Reorder button
-            IconButton(
-              icon: const Icon(Icons.swap_vert, color: Colors.white),
-              onPressed: _reorderPages,
-              tooltip: 'Reorder Pages',
-            ),
-            // Saved PDFs
-            IconButton(
-              icon: const Icon(Icons.folder_open, color: Colors.white),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SavedDocumentsPage()),
-              ),
-              tooltip: 'Saved Documents',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_sweep, color: Colors.white),
-              onPressed: _clearAll,
-              tooltip: 'Clear All',
-            ),
-          ],
-          // Always show saved docs
-          if (scannedImages.isEmpty)
-            IconButton(
-              icon: const Icon(Icons.folder_open, color: Colors.white),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SavedDocumentsPage()),
-              ),
-              tooltip: 'Saved Documents',
-            ),
-        ],
+  void _showExtractTextOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      body: SafeArea(
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Stats bar
-            if (scannedImages.isNotEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                color: Colors.white,
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.description,
-                      color: Color(0xFF2196F3),
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${scannedImages.length} page${scannedImages.length > 1 ? 's' : ''}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(width: 12),
-                    // Category chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2196F3).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        selectedCategory,
-                        style: const TextStyle(
-                          color: Color(0xFF2196F3),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    if (_isEnhanced) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text(
-                          'Enhanced',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const Spacer(),
-                    if (savedPdfPath != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text(
-                          'PDF Ready',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-            // Action chips
-            if (scannedImages.isNotEmpty)
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.only(
-                  left: 16,
-                  right: 16,
-                  bottom: 10,
-                ),
-                child: Row(
-                  children: [
-                    _actionChip(
-                      'Enhance',
-                      Icons.auto_fix_high,
-                      Colors.purple,
-                      _enhanceImages,
-                    ),
-                    const SizedBox(width: 8),
-                    _actionChip(
-                      'Extract Text',
-                      Icons.text_fields,
-                      Colors.orange,
-                      _showExtractTextOptions,
-                    ),
-                  ],
-                ),
-              ),
-
-            // Pages grid
-            Expanded(
-              child: scannedImages.isEmpty
-                  ? _buildEmptyState()
-                  : GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate:
-                const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.72,
-                ),
-                itemCount: scannedImages.length,
-                itemBuilder: (context, index) =>
-                    _buildImageCard(index),
-              ),
-            ),
-
-            // Bottom actions
             Container(
-              padding: const EdgeInsets.all(16),
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -3),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton.icon(
-                      onPressed: isProcessing ? null : _scanDocument,
-                      icon: const Icon(Icons.document_scanner),
-                      label: Text(
-                        scannedImages.isEmpty
-                            ? 'Start Scanning'
-                            : 'Add More Pages',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2196F3),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (scannedImages.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-
-                    // PDF এখনও তৈরি হয়নি
-                    if (savedPdfPath == null)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed: isProcessing ? null : _convertToPdf,
-                          icon: const Icon(Icons.picture_as_pdf, size: 20),
-                          label: const Text('Create PDF'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4CAF50),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // PDF তৈরি হয়ে গেলে
-                    if (savedPdfPath != null)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 50,
-                              child: ElevatedButton.icon(
-                                onPressed: _openPdf,
-                                icon: const Icon(Icons.open_in_new, size: 18),
-                                label: const Text('Open PDF'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 10),
-
-                          Expanded(
-                            child: SizedBox(
-                              height: 50,
-                              child: ElevatedButton.icon(
-                                onPressed: _sharePdf,
-                                icon: const Icon(Icons.share, size: 18),
-                                label: const Text('Share PDF'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.purple,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
-                  if (isProcessing) ...[
-                    const SizedBox(height: 10),
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 8),
-                        Text('Processing...'),
-                      ],
-                    ),
-                  ],
-                ],
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
+            const SizedBox(height: 20),
+            const Text(
+              'Extract Text From',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              onTap: () {
+                Navigator.pop(context);
+                _extractText();
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.document_scanner,
+                  color: Colors.orange,
+                ),
+              ),
+              title: const Text(
+                'From Scanned Pages',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Extract text from currently scanned pages',
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            ),
+            const Divider(),
+            ListTile(
+              onTap: () {
+                Navigator.pop(context);
+                _extractTextFromGallery();
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.photo_library, color: Colors.blue),
+              ),
+              title: const Text(
+                'Upload from Gallery',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Pick an image from gallery'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            ),
+            const Divider(),
+            ListTile(
+              onTap: () {
+                Navigator.pop(context);
+                _extractTextFromCamera();
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.camera_alt, color: Colors.green),
+              ),
+              title: const Text(
+                'Take Photo',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('Take a photo with camera'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            ),
+            const SizedBox(height: 10),
           ],
         ),
       ),
@@ -1331,7 +1012,11 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
                       color: Colors.red.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(Icons.close, size: 14, color: Colors.red),
+                    child: const Icon(
+                      Icons.close,
+                      size: 14,
+                      color: Colors.red,
+                    ),
                   ),
                 ),
               ],
@@ -1360,107 +1045,303 @@ class _DocumentScannerPageState extends State<DocumentScannerPage> {
     );
   }
 
-  // ✅ Extract Text button এ click করলে এই dialog আসবে
-  void _showExtractTextOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        title: const Text(
+          'Document Scanner',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF2196F3),
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+        actions: [
+          if (scannedImages.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.swap_vert, color: Colors.white),
+              onPressed: _reorderPages,
+              tooltip: 'Reorder Pages',
+            ),
+            IconButton(
+              icon: const Icon(Icons.folder_open, color: Colors.white),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SavedDocumentsPage(),
+                ),
+              ),
+              tooltip: 'Saved Documents',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_sweep, color: Colors.white),
+              onPressed: _clearAll,
+              tooltip: 'Clear All',
+            ),
+          ],
+          if (scannedImages.isEmpty)
+            IconButton(
+              icon: const Icon(Icons.folder_open, color: Colors.white),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SavedDocumentsPage(),
+                ),
+              ),
+              tooltip: 'Saved Documents',
+            ),
+        ],
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
+      body: SafeArea(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
+            if (scannedImages.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                color: Colors.white,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.description,
+                      color: Color(0xFF2196F3),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${scannedImages.length} page${scannedImages.length > 1 ? 's' : ''}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2196F3).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        selectedCategory,
+                        style: const TextStyle(
+                          color: Color(0xFF2196F3),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (_isEnhanced) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'Enhanced',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    if (savedPdfPath != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'PDF Ready',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            if (scannedImages.isNotEmpty)
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  bottom: 10,
+                ),
+                child: Row(
+                  children: [
+                    _actionChip(
+                      'Enhance',
+                      Icons.auto_fix_high,
+                      Colors.purple,
+                      _enhanceImages,
+                    ),
+                    const SizedBox(width: 8),
+                    _actionChip(
+                      'Extract Text',
+                      Icons.text_fields,
+                      Colors.orange,
+                      _showExtractTextOptions,
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: scannedImages.isEmpty
+                  ? _buildEmptyState()
+                  : GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate:
+                const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.72,
+                ),
+                itemCount: scannedImages.length,
+                itemBuilder: (context, index) =>
+                    _buildImageCard(index),
+              ),
+            ),
             Container(
-              width: 40,
-              height: 4,
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: isProcessing ? null : _scanDocument,
+                      icon: const Icon(Icons.document_scanner),
+                      label: Text(
+                        scannedImages.isEmpty
+                            ? 'Start Scanning'
+                            : 'Add More Pages',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2196F3),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (scannedImages.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    if (savedPdfPath == null)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          onPressed: isProcessing ? null : _convertToPdf,
+                          icon: const Icon(Icons.picture_as_pdf, size: 20),
+                          label: const Text('Create PDF'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4CAF50),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (savedPdfPath != null)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 50,
+                              child: ElevatedButton.icon(
+                                onPressed: _openPdf,
+                                icon: const Icon(
+                                  Icons.open_in_new,
+                                  size: 18,
+                                ),
+                                label: const Text('Open PDF'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: SizedBox(
+                              height: 50,
+                              child: ElevatedButton.icon(
+                                onPressed: _sharePdf,
+                                icon: const Icon(Icons.share, size: 18),
+                                label: const Text('Share PDF'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.purple,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                  if (isProcessing) ...[
+                    const SizedBox(height: 10),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Processing...'),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 20),
-            const Text(
-              'Extract Text From',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-
-            // ✅ Scanned pages থেকে
-            ListTile(
-              onTap: () {
-                Navigator.pop(context);
-                _extractText(); // আগের function
-              },
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.document_scanner, color: Colors.orange),
-              ),
-              title: const Text(
-                'From Scanned Pages',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text('Currently scanned pages থেকে text নেবে'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            ),
-
-            const Divider(),
-
-            // ✅ Gallery থেকে image upload করে
-            ListTile(
-              onTap: () {
-                Navigator.pop(context);
-                _extractTextFromGallery();
-              },
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.photo_library, color: Colors.blue),
-              ),
-              title: const Text(
-                'Upload from Gallery',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text('Gallery থেকে image upload করে text নেবে'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            ),
-
-            const Divider(),
-
-            // ✅ Camera দিয়ে তুলে
-            ListTile(
-              onTap: () {
-                Navigator.pop(context);
-                _extractTextFromCamera();
-              },
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.camera_alt, color: Colors.green),
-              ),
-              title: const Text(
-                'Take Photo',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: const Text('Camera দিয়ে ছবি তুলে text নেবে'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            ),
-            const SizedBox(height: 10),
           ],
         ),
       ),
     );
   }
 }
-

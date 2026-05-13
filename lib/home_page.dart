@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'main.dart';
 import 'scan_qr_code.dart';
 import 'generator_code.dart';
 import 'document_scanner_page.dart';
@@ -23,29 +21,11 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   String _version = '';
-  String _language = 'en';
-
-  String _t(String en, String bn) => _language == 'bn' ? bn : en;
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
-    _loadLanguage();
-    localeNotifier.addListener(_onLocaleChanged);
-  }
-
-  @override
-  void dispose() {
-    localeNotifier.removeListener(_onLocaleChanged);
-    super.dispose();
-  }
-
-  void _onLocaleChanged() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() => _language = prefs.getString('language') ?? 'en');
-    }
   }
 
   Future<void> _loadVersion() async {
@@ -53,18 +33,11 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() => _version = info.version);
   }
 
-  Future<void> _loadLanguage() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() => _language = prefs.getString('language') ?? 'en');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_t('ScanPro', 'স্ক্যানপ্রো')),
+        title: const Text('ScanPro'),
         actions: [
           IconButton(
             icon: const Icon(Icons.history, color: Colors.white),
@@ -72,7 +45,6 @@ class _HomePageState extends State<HomePage> {
               context,
               MaterialPageRoute(builder: (_) => const HistoryPage()),
             ),
-            tooltip: _t('Scan History', 'স্ক্যান ইতিহাস'),
           ),
         ],
       ),
@@ -101,27 +73,26 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 ),
-                child: Icon(Icons.qr_code_2, size: 70.sp, color: Colors.white),
+                child: Icon(
+                  Icons.qr_code_2,
+                  size: 70.sp,
+                  color: Colors.white,
+                ),
               ),
               SizedBox(height: 32.h),
               Text(
-                _t('What would you like to do?', 'আপনি কী করতে চান?'),
+                'What would you like to do?',
                 style: TextStyle(
                   fontSize: 18.sp,
                   fontWeight: FontWeight.w600,
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white
-                      : const Color(0xFF333333),
+                  color: const Color(0xFF333333),
                 ),
               ),
               SizedBox(height: 32.h),
               _FeatureCard(
                 icon: Icons.qr_code_scanner,
-                title: _t('Scan QR Code', 'QR কোড স্ক্যান'),
-                subtitle: _t(
-                  'Scan any QR code or barcode',
-                  'যেকোনো QR কোড স্ক্যান করুন',
-                ),
+                title: 'Scan QR Code',
+                subtitle: 'Scan any QR code or barcode',
                 color: const Color(0xFF2196F3),
                 onTap: () => Navigator.push(
                   context,
@@ -131,11 +102,8 @@ class _HomePageState extends State<HomePage> {
               SizedBox(height: 16.h),
               _FeatureCard(
                 icon: Icons.add_box_outlined,
-                title: _t('Generate QR Code', 'QR কোড তৈরি'),
-                subtitle: _t(
-                  'Create QR code from text or URL',
-                  'টেক্সট থেকে QR তৈরি করুন',
-                ),
+                title: 'Generate QR Code',
+                subtitle: 'Create QR code from text or URL',
                 color: const Color(0xFF4CAF50),
                 onTap: () => Navigator.push(
                   context,
@@ -145,15 +113,14 @@ class _HomePageState extends State<HomePage> {
               SizedBox(height: 16.h),
               _FeatureCard(
                 icon: Icons.document_scanner,
-                title: _t('Document Scanner', 'ডকুমেন্ট স্ক্যানার'),
-                subtitle: _t(
-                  'Scan documents & save as PDF',
-                  'ডকুমেন্ট স্ক্যান করুন',
-                ),
+                title: 'Document Scanner',
+                subtitle: 'Scan documents & save as PDF',
                 color: Colors.orange,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const DocumentScannerPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const DocumentScannerPage(),
+                  ),
                 ),
               ),
             ],
@@ -164,11 +131,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDrawer() {
-    final isDark = darkModeNotifier.value;
-    final drawerBg = isDark ? const Color(0xFF1E1E1E) : Colors.white;
-
     return Drawer(
-      backgroundColor: drawerBg,
+      backgroundColor: Colors.white,
       child: Column(
         children: [
           SizedBox(
@@ -197,11 +161,15 @@ class _HomePageState extends State<HomePage> {
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(16.r),
                     ),
-                    child: Icon(Icons.qr_code_2, size: 36.sp, color: Colors.white),
+                    child: Icon(
+                      Icons.qr_code_2,
+                      size: 36.sp,
+                      color: Colors.white,
+                    ),
                   ),
                   SizedBox(height: 12.h),
                   Text(
-                    _t('ScanPro', 'স্ক্যানপ্রো'),
+                    'ScanPro',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 22.sp,
@@ -209,10 +177,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   Text(
-                    _t(
-                      'QR Scanner & Document Manager',
-                      'QR স্ক্যানার ও ডকুমেন্ট ম্যানেজার',
-                    ),
+                    'QR Scanner & Document Manager',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.8),
                       fontSize: 12.sp,
@@ -228,13 +193,13 @@ class _HomePageState extends State<HomePage> {
               children: [
                 _drawerItem(
                   icon: Icons.home,
-                  title: _t('Home', 'হোম'),
+                  title: 'Home',
                   color: const Color(0xFF2196F3),
                   onTap: () => Navigator.pop(context),
                 ),
                 _drawerItem(
                   icon: Icons.history,
-                  title: _t('Scan History', 'স্ক্যান ইতিহাস'),
+                  title: 'Scan History',
                   color: Colors.purple,
                   onTap: () {
                     Navigator.pop(context);
@@ -246,7 +211,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _drawerItem(
                   icon: Icons.folder_open,
-                  title: _t('Saved Documents', 'সংরক্ষিত ডকুমেন্ট'),
+                  title: 'Saved Documents',
                   color: Colors.orange,
                   onTap: () {
                     Navigator.pop(context);
@@ -260,7 +225,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _drawerItem(
                   icon: Icons.settings,
-                  title: _t('Settings', 'সেটিংস'),
+                  title: 'Settings',
                   color: Colors.grey,
                   onTap: () {
                     Navigator.pop(context);
@@ -273,7 +238,7 @@ class _HomePageState extends State<HomePage> {
                 const Divider(height: 1),
                 _drawerItem(
                   icon: Icons.star_rate,
-                  title: _t('Rate Us', 'রেটিং দিন'),
+                  title: 'Rate Us',
                   color: Colors.amber,
                   onTap: () {
                     Navigator.pop(context);
@@ -287,21 +252,18 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _drawerItem(
                   icon: Icons.share,
-                  title: _t('Share App', 'অ্যাপ শেয়ার করুন'),
+                  title: 'Share App',
                   color: Colors.green,
                   onTap: () {
                     Navigator.pop(context);
                     Share.share(
-                      _t(
-                        'Check out ScanPro!\nhttps://play.google.com/store/apps/details?id=com.yourpackage.scanner',
-                        'স্ক্যানপ্রো দেখুন!\nhttps://play.google.com/store/apps/details?id=com.yourpackage.scanner',
-                      ),
+                      'Check out ScanPro!\nhttps://play.google.com/store/apps/details?id=com.yourpackage.scanner',
                     );
                   },
                 ),
                 _drawerItem(
                   icon: Icons.privacy_tip,
-                  title: _t('Privacy Policy', 'গোপনীয়তা নীতি'),
+                  title: 'Privacy Policy',
                   color: Colors.teal,
                   onTap: () {
                     Navigator.pop(context);
@@ -315,7 +277,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _drawerItem(
                   icon: Icons.help_outline,
-                  title: _t('Help & FAQ', 'সাহায্য ও FAQ'),
+                  title: 'Help & FAQ',
                   color: Colors.blue,
                   onTap: () {
                     Navigator.pop(context);
@@ -328,7 +290,7 @@ class _HomePageState extends State<HomePage> {
                 const Divider(height: 1),
                 _drawerItem(
                   icon: Icons.info_outline,
-                  title: _t('About', 'সম্পর্কে'),
+                  title: 'About',
                   color: Colors.indigo,
                   onTap: () {
                     Navigator.pop(context);
@@ -341,11 +303,8 @@ class _HomePageState extends State<HomePage> {
           Padding(
             padding: EdgeInsets.all(16.w),
             child: Text(
-              '${_t('Version', 'ভার্সন')} $_version',
-              style: TextStyle(
-                color: Colors.grey[400],
-                fontSize: 12.sp,
-              ),
+              'Version $_version',
+              style: TextStyle(color: Colors.grey[400], fontSize: 12.sp),
             ),
           ),
         ],
@@ -359,7 +318,6 @@ class _HomePageState extends State<HomePage> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    final isDark = darkModeNotifier.value;
     return ListTile(
       onTap: onTap,
       leading: Container(
@@ -376,14 +334,10 @@ class _HomePageState extends State<HomePage> {
         style: TextStyle(
           fontSize: 14.sp,
           fontWeight: FontWeight.w500,
-          color: isDark ? Colors.white : const Color(0xFF333333),
+          color: const Color(0xFF333333),
         ),
       ),
-      trailing: Icon(
-        Icons.arrow_forward_ios,
-        size: 14.sp,
-        color: Colors.grey,
-      ),
+      trailing: Icon(Icons.arrow_forward_ios, size: 14.sp, color: Colors.grey),
     );
   }
 
@@ -410,22 +364,16 @@ class _HomePageState extends State<HomePage> {
             ),
             SizedBox(height: 16.h),
             Text(
-              _t('ScanPro', 'স্ক্যানপ্রো'),
-              style: TextStyle(
-                fontSize: 22.sp,
-                fontWeight: FontWeight.bold,
-              ),
+              'ScanPro',
+              style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.bold),
             ),
             Text(
-              '${_t('Version', 'ভার্সন')} $_version',
+              'Version $_version',
               style: TextStyle(color: Colors.grey[500], fontSize: 13.sp),
             ),
             SizedBox(height: 12.h),
             Text(
-              _t(
-                'QR Scanner & Document Manager',
-                'QR স্ক্যানার ও ডকুমেন্ট ম্যানেজার',
-              ),
+              'QR Scanner & Document Manager',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey, fontSize: 13.sp),
             ),
@@ -433,7 +381,7 @@ class _HomePageState extends State<HomePage> {
             const Divider(),
             SizedBox(height: 8.h),
             Text(
-              _t('Developed by', 'ডেভেলপার'),
+              'Developed by',
               style: TextStyle(color: Colors.grey, fontSize: 12.sp),
             ),
             Text(
@@ -455,7 +403,7 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(8.r),
               ),
             ),
-            child: Text(_t('Close', 'বন্ধ করুন')),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -480,16 +428,13 @@ class _FeatureCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF2C2C2C) : Colors.white;
-
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: double.infinity,
         padding: EdgeInsets.all(20.w),
         decoration: BoxDecoration(
-          color: cardColor,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16.r),
           boxShadow: [
             BoxShadow(
@@ -519,7 +464,7 @@ class _FeatureCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 16.sp,
                       fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF333333),
+                      color: const Color(0xFF333333),
                     ),
                   ),
                   SizedBox(height: 4.h),

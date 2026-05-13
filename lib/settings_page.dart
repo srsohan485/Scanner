@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'main.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -13,10 +12,6 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool _autoOpenUrl = true;
   bool _saveHistory = true;
-  String _language = 'en';
-
-  // ✅ Language helper
-  String _t(String en, String bn) => _language == 'bn' ? bn : en;
 
   @override
   void initState() {
@@ -29,7 +24,6 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _autoOpenUrl = prefs.getBool('auto_open_url') ?? true;
       _saveHistory = prefs.getBool('save_history') ?? true;
-      _language = prefs.getString('language') ?? 'en';
     });
   }
 
@@ -38,26 +32,21 @@ class _SettingsPageState extends State<SettingsPage> {
     await prefs.setBool(key, value);
   }
 
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF2C2C2C) : Colors.white;
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(_t('Settings', 'সেটিংস')),
+        title: const Text('Settings'),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: ListView(
         padding: EdgeInsets.all(16.w),
         children: [
-          _sectionTitle(_t('Scanner', 'স্ক্যানার')),
-          _settingCard(cardColor, [
+          _sectionTitle('Scanner'),
+          _settingCard([
             _switchTile(
-              _t('Auto Open URL', 'স্বয়ংক্রিয় URL খোলা'),
-              _t('Automatically open browser when URL is scanned',
-                  'URL স্ক্যান হলে স্বয়ংক্রিয়ভাবে ব্রাউজার খুলবে'),
+              'Auto Open URL',
+              'Automatically open browser when URL is scanned',
               Icons.link,
               Colors.blue,
               _autoOpenUrl,
@@ -67,8 +56,8 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
             _switchTile(
-              _t('Save History', 'ইতিহাস সেভ করুন'),
-              _t('Save scan history', 'স্ক্যান ইতিহাস সংরক্ষণ করুন'),
+              'Save History',
+              'Save scan history',
               Icons.history,
               Colors.orange,
               _saveHistory,
@@ -81,8 +70,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
           SizedBox(height: 16.h),
 
-          _sectionTitle(_t('Storage', 'স্টোরেজ')),
-          _settingCard(cardColor, [
+          _sectionTitle('Storage'),
+          _settingCard([
             ListTile(
               leading: Container(
                 width: 36.w,
@@ -98,29 +87,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               title: Text(
-                _t('Clear Scan History', 'স্ক্যান ইতিহাস মুছুন'),
+                'Clear Scan History',
                 style: TextStyle(
                   fontWeight: FontWeight.w500,
                   fontSize: 14.sp,
                 ),
               ),
               subtitle: Text(
-                _t('Delete all scan history', 'সব স্ক্যান ইতিহাস মুছে ফেলবে'),
+                'Delete all scan history',
                 style: TextStyle(fontSize: 12.sp),
               ),
               trailing: Icon(Icons.arrow_forward_ios, size: 14.sp),
               onTap: () => _showClearDialog(
-                _t('Clear History', 'ইতিহাস মুছুন'),
-                _t('Delete all scan history?', 'সব স্ক্যান ইতিহাস মুছে ফেলবেন?'),
+                'Clear History',
+                'Delete all scan history?',
                     () async {
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.remove('scan_history');
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          _t('History cleared!', 'ইতিহাস মুছে গেছে!'),
-                        ),
+                      const SnackBar(
+                        content: Text('History cleared!'),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -149,10 +136,10 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _settingCard(Color cardColor, List<Widget> children) {
+  Widget _settingCard(List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
-        color: cardColor,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12.r),
         boxShadow: [
           BoxShadow(
@@ -213,7 +200,7 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(_t('Cancel', 'বাতিল')),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -221,9 +208,9 @@ class _SettingsPageState extends State<SettingsPage> {
               onConfirm();
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text(
-              _t('Clear', 'মুছুন'),
-              style: const TextStyle(color: Colors.white),
+            child: const Text(
+              'Clear',
+              style: TextStyle(color: Colors.white),
             ),
           ),
         ],
